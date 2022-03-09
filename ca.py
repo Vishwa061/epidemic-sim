@@ -44,11 +44,15 @@ class Grid:
         return neighbours
       
 class Simulation:
+    WAVES_SAVE_FOLDER = 'waves'
+    EDGES_SAVE_FILENAME = 'edges.csv'
+
     def __init__(self, rows, cols, initial_infection_percent):
         self.rows = rows
         self.cols = cols
         self.grid = Grid(rows, cols)
         self.edges = [] # directed edges: (from node, to node)
+        self.waves = [] # list of waves (each wave is a list of edges)
         self.time_steps = 0
         self.do_initial_infection(initial_infection_percent)
 
@@ -85,6 +89,7 @@ class Simulation:
     def step(self):
         nodes_to_infect = []
         nodes_to_remove = []
+        wave = []
         for r in self.grid.grid:
             for n in r:
                 if n.state == State.INFECTED:
@@ -93,13 +98,14 @@ class Simulation:
                 elif n.state == State.SUSCEPTIBLE:
                     neighbours = self.grid.get_neighbours(n.row, n.col)
                     for neighbour in neighbours:
-                        if neighbour.state == State.INFECTED and random.random() < 0.08: # 100% chance of infection
+                        if neighbour.state == State.INFECTED and random.random() < 0.116: # 11.6% chance of infection
                             nodes_to_infect.append(n)
                             self.edges.append((neighbour.name, n.name))
-                            break
+                            wave.append((neighbour.name, n.name))
         self.increment_durations()
         self.infect_nodes(nodes_to_infect)
         self.remove_nodes(nodes_to_remove)
+        self.waves.append(wave)
         self.time_steps += 1
 
     def run(self, time_steps):
@@ -123,13 +129,17 @@ class Simulation:
                 line = line[:-1] + '\n'
                 f.write(line)
     
-    def save_edges_to_csv(self, filename):
-        self.save_to_csv(self.edges, filename)
+    def save_edges_to_csv(self):
+        self.save_to_csv(self.edges, self.EDGES_SAVE_FILENAME)
+
+    def save_waves_to_csv(self):
+        for i in range(len(self.waves)):
+            self.save_to_csv(self.waves[i], f'{self.WAVES_SAVE_FOLDER}/wave{i}.csv')
 
 if __name__ == '__main__':
     # sim parameters
-    rows = 20
-    cols = 20
+    rows = 10
+    cols = 50
     initial_infection_percent = 0.01
     time_steps = 2
     seed = 8486
@@ -138,16 +148,37 @@ if __name__ == '__main__':
     random.seed(seed)
 
     # create and run the simulation
-    simulation = Simulation(rows, cols, initial_infection_percent)
-    simulation.run(time_steps)
-    # simulation.full_run()
+    sim = Simulation(rows, cols, initial_infection_percent)
+    # simulation.run(time_steps)
+    sim.full_run()
 
     # save the edges to a csv file
-    simulation.save_edges_to_csv('edges.csv')
+    sim.save_edges_to_csv()
+
+    # save the waves to a csv file
+    sim.save_waves_to_csv()
+
+    # for wave in sim.waves:
+    #     G = nx.DiGraph()
+    #     G.add_edges_from(wave)
+    #     pos = nx.spring_layout(G)
+    #     nx.draw_networkx_nodes(G, pos, node_size=100)
+    #     nx.draw_networkx_edges(G, pos, width=1)
+    #     plt.axis('off')
+    #     plt.show()
 
     # # plot directed graph
     # G = nx.DiGraph()
-    # G.add_edges_from(simulation.edges)
+    # G.add_edges_from(sim.edges)
+
+    # # get gcc
+    # gcc_set = max(nx.weakly_connected_components(G), key=len)
+    # print(nx.subgraph(G, gcc_set))
+
+    # # get avg node degree
+    # out_node_degrees = G.number_of_edges() / G.number_of_nodes()
+    # print(out_node_degrees)
+
     # pos = nx.spring_layout(G)
     # nx.draw_networkx_nodes(G, pos, node_size=100)
     # nx.draw_networkx_edges(G, pos, width=1)

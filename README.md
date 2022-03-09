@@ -4,11 +4,14 @@ Project for EECS4414 Information Networks
 
 ## Setup
 
-**Create virtual environment**
+### Create virtual environment
+
 python3 -m venv .env
-**Install packages**
+
+### Install packages
+
 pip install -r req.txt
 
-# Run
+## Run
 
-python main.py
+python ca.py
