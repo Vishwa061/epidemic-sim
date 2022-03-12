@@ -1,6 +1,9 @@
 import random
+from timeit import repeat
 import networkx as nx
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import time
 
 class State:
     SUSCEPTIBLE = 0
@@ -46,6 +49,7 @@ class Grid:
 class Simulation:
     WAVES_SAVE_FOLDER = 'waves'
     EDGES_SAVE_FILENAME = 'edges.csv'
+    DEFAULT_INTERVAL = 200
 
     def __init__(self, rows, cols, initial_infection_percent):
         self.rows = rows
@@ -55,6 +59,21 @@ class Simulation:
         self.waves = [] # list of waves (each wave is a list of edges)
         self.time_steps = 0
         self.do_initial_infection(initial_infection_percent)
+
+        # create graph 
+        self.G = nx.Graph()
+        self.fixed_positions = {}
+        for row in self.grid.grid:
+            for node in row:
+                for neighbour in self.grid.get_neighbours(node.row, node.col):
+                    self.G.add_edge(node.name, neighbour.name, color='green')
+                self.fixed_positions[node.name] = (node.col, abs(node.row-self.rows)) # populate dict to position nodes
+
+        fixed_nodes = self.fixed_positions.keys()
+        self.pos = nx.spring_layout(self.G, pos=self.fixed_positions, fixed=fixed_nodes)
+        
+        # create figure
+        self.fig, self.ax = plt.subplots()
 
     def do_initial_infection(self, percent_to_infect):
         for r in self.grid.grid:
@@ -86,7 +105,7 @@ class Simulation:
     def get_num_removed_nodes(self):
         return len([n for n in self.grid.grid for n in n if n.state == State.REMOVED])
 
-    def step(self):
+    def step(self, num):
         nodes_to_infect = []
         nodes_to_remove = []
         wave = []
@@ -95,30 +114,68 @@ class Simulation:
                 if n.state == State.INFECTED:
                     if n.duration >= 5: # remove after 5 time steps
                         nodes_to_remove.append(n)
-                elif n.state == State.SUSCEPTIBLE:
-                    neighbours = self.grid.get_neighbours(n.row, n.col)
-                    for neighbour in neighbours:
-                        if neighbour.state == State.INFECTED and random.random() < 0.116: # 11.6% chance of infection
-                            nodes_to_infect.append(n)
-                            self.edges.append((neighbour.name, n.name))
-                            wave.append((neighbour.name, n.name))
+                    else:
+                        neighbours = self.grid.get_neighbours(n.row, n.col)
+                        for neighbour in neighbours:
+                            if neighbour.state == State.SUSCEPTIBLE and random.random() < 0.116: # 11.6% chance of infection:
+                                nodes_to_infect.append(neighbour)
+                                wave.append((n, neighbour))
+                                self.edges.append((n, neighbour))
+                                # if n.row == 0  and n.col == 22:
+                                #     print(f'{n.name} was infected by {neighbour.name}')
         self.increment_durations()
         self.infect_nodes(nodes_to_infect)
         self.remove_nodes(nodes_to_remove)
         self.waves.append(wave)
         self.time_steps += 1
+        self.display_graph(num)
 
-    def run(self, time_steps):
-        print(self.grid)
-        for _ in range(time_steps):
-            self.step()
-            print(f'\n{self.grid}')
+    def display_graph(self, num):
+        node_color_map = []
+        edge_color_map = []
+        for row in self.grid.grid:
+            for node in row:
+                if node.state == State.INFECTED:
+                    node_color_map.append('red')
+                elif node.state == State.REMOVED:
+                    node_color_map.append('black')
+                else:
+                    node_color_map.append('green')
+                
+                if node.row == 1 and node.col == 22 and node.state == State.INFECTED:
+                    node_color_map.pop()
+                    node_color_map.append('blue')
+                    print(f'{node.name} is blue')
+                    print(f'{node.name} is {node.state}')
+                
+                neighbours = self.grid.get_neighbours(node.row, node.col)
+                for neighbour in neighbours:
+                    if self.G.edges[neighbour.name, node.name] and node.state == neighbour.state:
+                        edge = self.G.edges[neighbour.name, node.name]
+                        if node.state == State.INFECTED:
+                            edge['color'] = 'red'
+                        elif node.state == State.REMOVED:
+                            edge['color'] = 'black'
+                        else:
+                            edge['color'] = 'green'
+                            
+        edge_color_map = [self.G[u][v]['color'] for u,v in self.G.edges]
+        self.ax.clear()
+        nx.draw(G=self.G, pos=self.pos, ax=self.ax, node_size=40, node_color=node_color_map, edge_color=edge_color_map) # with_labels=True, font_size=8
+        
+        self.ax.set_title(f't = {str(num)}', fontweight="bold")
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
 
-    def full_run(self):
-        print(self.grid)
+    def frames(self):
         while self.get_num_infected_nodes() > 0:
-            self.step()
-            print(f'\n{self.grid}')
+            yield self.time_steps
+
+    def start(self, time_steps=None, interval=None):
+        interval = interval or self.DEFAULT_INTERVAL
+        frames = time_steps or self.frames
+        ani = animation.FuncAnimation(self.fig, self.step, frames=frames, interval=interval, repeat=False)
+        plt.show()
 
     def save_to_csv(self, list_of_tuples, filename):
         with open(filename, 'w') as f:
@@ -138,10 +195,9 @@ class Simulation:
 
 if __name__ == '__main__':
     # sim parameters
-    rows = 10
-    cols = 50
+    rows = 30
+    cols = 30
     initial_infection_percent = 0.01
-    time_steps = 2
     seed = 8486
 
     # seed the random number generator
@@ -149,19 +205,43 @@ if __name__ == '__main__':
 
     # create and run the simulation
     sim = Simulation(rows, cols, initial_infection_percent)
-    # simulation.run(time_steps)
-    sim.full_run()
+    sim.start(time_steps=11, interval=1)
+    # for node in sim.grid.grid[0]:
+    #     if node.state == State.INFECTED:
+    #         print("NODE:"+node.name)
+    #         nn = sim.grid.get_neighbours(node.row, node.col)
+    #         for nnn in nn:
+    #             print(nnn.name)
 
     # save the edges to a csv file
-    sim.save_edges_to_csv()
+    # sim.save_edges_to_csv()
 
     # save the waves to a csv file
     sim.save_waves_to_csv()
 
+    # create a grid to visualize the simulation
+    # G = nx.DiGraph()
+    # fixed_positions = {}
+    # for row in sim.grid.grid:
+    #     for node in row:
+    #         G.add_node(node.name)
+    #         fixed_positions[node.name] = (node.row, node.col) # populate dict to position nodes
+
     # for wave in sim.waves:
-    #     G = nx.DiGraph()
     #     G.add_edges_from(wave)
-    #     pos = nx.spring_layout(G)
+    #     fixed_nodes = fixed_positions.keys()
+    #     pos = nx.spring_layout(G, pos=fixed_positions, fixed=fixed_nodes)
+
+    #     color_map = []
+    #     for row in sim.grid.grid:
+    #         for node in row:
+    #             color_map.append('green')
+    #     nx.draw(G, pos, node_size=40, node_color=color_map)
+    #     plt.show()
+
+    #----------------------------------------------------------------------------------------------------------------------
+
+
     #     nx.draw_networkx_nodes(G, pos, node_size=100)
     #     nx.draw_networkx_edges(G, pos, width=1)
     #     plt.axis('off')
