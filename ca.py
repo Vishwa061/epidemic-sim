@@ -65,7 +65,7 @@ class Simulation:
     EDGES_SAVE_FILENAME = 'ca_edges.csv'
     DEFAULT_INTERVAL = 200
     NODE_SIZE = 40
-    CHANCE_OF_INFECTION = 0.1 # 10% chance of infection
+    CHANCE_OF_INFECTION = 0.05 # 5% chance of infection, when greater than 4% it goes viral (infects more than half the pop)
 
     def __init__(self, rows, cols, initial_infection_percent, frames=None, interval=None, seed=None):
         self.rows = rows
@@ -179,12 +179,13 @@ class Simulation:
         for u,v in self.G.edges:
             if self.G[u][v]['color'] == 'red':
                 num_infected_edges += 1
-                node = self.grid.get_node(v)
-                neighbours = self.grid.get_neighbours(node.row, node.col)
-                for neighbour in neighbours:
-                    if neighbour.name != node.name and neighbour.state == State.INFECTED:
-                        num_infectious_nodes += 1
-                        break
+        for n in self.G.nodes():
+            node = self.grid.get_node(n)
+            neighbours = self.grid.get_neighbours(node.row, node.col)
+            for neighbour in neighbours:
+                if neighbour.name != node.name and neighbour.state == State.INFECTED:
+                    num_infectious_nodes += 1
+                    break
         if num_infectious_nodes > 0:
             R0 = num_infected_edges / num_infectious_nodes
         R0_formated = str('{:10.4f}'.format(R0)).strip()
@@ -294,4 +295,4 @@ if __name__ == '__main__':
     sim.start()
 
     # run analysis
-    sim.analyze()
+    # sim.analyze()
