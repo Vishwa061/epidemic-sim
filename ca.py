@@ -24,7 +24,7 @@ class Node:
         self.state = state
         self.duration = 0 # how long the node has been in the current state (in time steps)
         self.adoption_threshold = random.random()
-        self.suseptiblity = random.random()
+        self.susceptiblity = random.random()
     
     def get_color(self):
         return Node.COLOR_MAP[self.state]
@@ -54,10 +54,12 @@ class Grid:
 class Simulation:
     WAVES_SAVE_FOLDER = 'ca_waves'
     EDGES_SAVE_FILENAME = 'ca_edges.csv'
+    PROPAGATION_SAVE_FOLDER = 'ca_propagation'
     DEFAULT_INTERVAL = 200
     NODE_SIZE = 40
     CHANCE_OF_INFECTION = 0.1 # 10% chance of infection
     RECOVERY_TIME = 14
+    DEFAULT_ALPHA = 0.3
 
     def __init__(self, rows, cols, initial_infection_percent):
         self.rows = rows
@@ -72,6 +74,7 @@ class Simulation:
         self.ani = None
         self.vaccination_enabled = False
         self.num_nodes = rows * cols
+        self.alpha = Simulation.DEFAULT_ALPHA
 
         # infect a percentage of the nodes
         self.do_initial_infection(initial_infection_percent)
@@ -105,6 +108,13 @@ class Simulation:
 
     def disable_vaccination(self):
         self.vaccination_enabled = False
+
+    def set_alpha(self, alpha):
+        if not self.vaccination_enabled:
+            raise Exception('Vaccination must be enabled to set alpha')
+        if alpha < 0 or alpha > 1:
+            raise ValueError('Alpha must be between 0 and 1')
+        self.alpha = alpha
 
     def do_initial_infection(self, percent_to_infect):
         for r in self.grid.grid:
@@ -157,9 +167,9 @@ class Simulation:
                 if n.state == State.INFECTED and n.duration >= Simulation.RECOVERY_TIME: # recover after 14 time steps
                     nodes_to_recover.append(n)
                 elif n.state == State.SUSCEPTIBLE:
-                    chance_of_infection = Simulation.CHANCE_OF_INFECTION * n.suseptiblity
+                    chance_of_infection = Simulation.CHANCE_OF_INFECTION * n.susceptiblity
                     if self.vaccination_enabled:
-                        if n.state == State.SUSCEPTIBLE and n.adoption_threshold < (self.get_num_recovered_nodes() * 0.3 + self.get_num_vaccinated_nodes()) / self.num_nodes:
+                        if n.state == State.SUSCEPTIBLE and n.adoption_threshold < (self.get_num_recovered_nodes() * (1 - self.alpha) + self.get_num_vaccinated_nodes() * self.alpha) / self.num_nodes:
                             nodes_to_vaccinate.append(n)
                             continue
                         if n.state == State.VACCINATED:
@@ -215,19 +225,19 @@ class Simulation:
         R0_formated = str('{:10.4f}'.format(R0)).strip()
 
         # record SIR over time
-        suseptible_nodes = self.get_num_susceptible_nodes()
+        susceptible_nodes = self.get_num_susceptible_nodes()
         infected_nodes = self.get_num_infected_nodes()
         recovered_nodes = self.get_num_recovered_nodes()
-        self.SIR_over_time.append((num, (suseptible_nodes, infected_nodes, recovered_nodes)))
+        self.SIR_over_time.append((num, (susceptible_nodes, infected_nodes, recovered_nodes)))
 
         self.ax.clear()
-        self.ax.set_title(f't = {str(num)} | R0 = {R0_formated} | S = {suseptible_nodes}, I = {infected_nodes}, R = {recovered_nodes}', fontweight="bold")
+        self.ax.set_title(f't = {str(num)} | R0 = {R0_formated} | S = {susceptible_nodes}, I = {infected_nodes}, R = {recovered_nodes}', fontweight="bold")
         self.ax.set_xticks([])
         self.ax.set_yticks([])
         nx.draw(G=self.G, pos=self.pos, ax=self.ax, node_size=Simulation.NODE_SIZE, node_color=node_color_map, edge_color=edge_color_map)
         
         if num % 10 == 0:
-            plt.savefig(f'ca_propagation/ca_propagation{str(num)}.png', bbox_inches='tight')
+            plt.savefig(f'{Simulation.PROPAGATION_SAVE_FOLDER}/ca_propagation{str(num)}.png', bbox_inches='tight')
 
     def frames_gen(self):
         while self.get_num_infected_nodes() > 0:
@@ -236,6 +246,7 @@ class Simulation:
     def start(self):
         self.display_graph(0)
         self.ani = animation.FuncAnimation(self.fig, self.step, frames=self.frames, interval=self.interval, repeat=False)
+        # self.ani.save(f'{Simulation.PROPAGATION_SAVE_FOLDER}/ca_propagation.gif', writer='imagemagick', fps=10)
         plt.show()
 
     def save_to_csv(self, list_of_tuples, filename):
@@ -280,7 +291,7 @@ class Simulation:
         plt.xlabel('Time steps')
         plt.ylabel('Number of Nodes')
         plt.yscale('log')
-        plt.legend(['Susceptible (S)', 'Infected (I)', 'Removed (R)'], loc='center right')
+        plt.legend(['Susceptible (S)', 'Infected (I)', 'Recovered (R)'], loc='center right')
         plt.savefig(f'ca_analysis/SIR_over_time.png', bbox_inches='tight')
         plt.clf()
         
@@ -311,7 +322,8 @@ if __name__ == '__main__':
     sim.set_frames(frames)
     sim.set_interval(interval)
     sim.enable_vaccination()
+    sim.set_alpha(1)
     sim.start()
 
     # run analysis
-    sim.analyze()
+    # sim.analyze()
