@@ -310,7 +310,7 @@ if __name__ == '__main__':
     rows = 40
     cols = 40
     initial_infection_percent = 0.01
-    frames = 121
+    frames = 121 # time steps [0, 120]
     interval = 1
 
     # run the simulation
