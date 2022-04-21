@@ -313,7 +313,7 @@ if __name__ == '__main__':
     frames = 121
     interval = 1
 
-    # run the simulation without vaccinations
+    # run the simulation
     sim = Simulation(rows, cols, initial_infection_percent)
     sim.set_frames(frames)
     sim.set_interval(interval)
