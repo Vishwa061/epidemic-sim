@@ -16,6 +16,8 @@ class State:
 
 class Node:
     COLOR_MAP = ['white', 'red', 'black', 'yellow']
+    SIGMA = 0.33
+    MU = 0.40
 
     def __init__(self, row, col, state=State.SUSCEPTIBLE):
         self.name = f'r{row}c{col}'
@@ -23,8 +25,9 @@ class Node:
         self.col = col
         self.state = state
         self.duration = 0 # how long the node has been in the current state (in time steps)
-        self.adoption_threshold = random.random()
+        self.adoption_threshold = random.normalvariate(Node.MU, Node.SIGMA)
         self.susceptiblity = random.random()
+        self.is_vaccinated = False
     
     def get_color(self):
         return Node.COLOR_MAP[self.state]
@@ -59,7 +62,6 @@ class Simulation:
     NODE_SIZE = 40
     CHANCE_OF_INFECTION = 0.1 # 10% chance of infection
     RECOVERY_TIME = 14
-    DEFAULT_ALPHA = 0.3
 
     def __init__(self, rows, cols, initial_infection_percent):
         self.rows = rows
@@ -74,7 +76,6 @@ class Simulation:
         self.ani = None
         self.vaccination_enabled = False
         self.num_nodes = rows * cols
-        self.alpha = Simulation.DEFAULT_ALPHA
 
         # infect a percentage of the nodes
         self.do_initial_infection(initial_infection_percent)
@@ -87,9 +88,9 @@ class Simulation:
                 if node.state == State.INFECTED:
                     self.G.add_node(node.name, color='red')
                 else:
-                    self.G.add_node(node.name, color='green')
+                    self.G.add_node(node.name, color='blue')
                 for neighbour in self.grid.get_neighbours(node.row, node.col):
-                    self.G.add_edge(node.name, neighbour.name, color='green')
+                    self.G.add_edge(node.name, neighbour.name, color='blue')
                 self.fixed_positions[node.name] = (node.col, abs(node.row-self.rows)) # populate dict to position nodes
         fixed_nodes = self.fixed_positions.keys()
         self.pos = nx.spring_layout(self.G, pos=self.fixed_positions, fixed=fixed_nodes)
@@ -108,13 +109,6 @@ class Simulation:
 
     def disable_vaccination(self):
         self.vaccination_enabled = False
-
-    def set_alpha(self, alpha):
-        if not self.vaccination_enabled:
-            raise Exception('Vaccination must be enabled to set alpha')
-        if alpha < 0 or alpha > 1:
-            raise ValueError('Alpha must be between 0 and 1')
-        self.alpha = alpha
 
     def do_initial_infection(self, percent_to_infect):
         for r in self.grid.grid:
@@ -136,9 +130,9 @@ class Simulation:
 
     def vaccinate_nodes(self, nodes_to_vaccinate):
         for n in nodes_to_vaccinate:
-            n.state = State.VACCINATED
-            n.duration = 0
-            self.G.nodes[n.name]['color'] = 'yellow'
+            n.is_vaccinated = True
+            if n.state == State.SUSCEPTIBLE:
+                self.G.nodes[n.name]['color'] = 'yellow'
 
     def increment_durations(self):
         for r in self.grid.grid:
@@ -146,7 +140,7 @@ class Simulation:
                 n.duration += 1
 
     def get_num_susceptible_nodes(self):
-        return len([n for n in self.grid.grid for n in n if n.state == State.SUSCEPTIBLE or n.state == State.VACCINATED])
+        return len([n for n in self.grid.grid for n in n if n.state == State.SUSCEPTIBLE])
 
     def get_num_infected_nodes(self):
         return len([n for n in self.grid.grid for n in n if n.state == State.INFECTED])
@@ -155,7 +149,16 @@ class Simulation:
         return len([n for n in self.grid.grid for n in n if n.state == State.RECOVERED])
 
     def get_num_vaccinated_nodes(self):
-        return len([n for n in self.grid.grid for n in n if n.state == State.VACCINATED])
+        return len([n for n in self.grid.grid for n in n if n.is_vaccinated])
+
+    # takes in a node and returns a number 
+    def get_vaccinated_neighbours(self, node):
+        num_vaxxed = 0
+        neighbours = self.grid.get_neighbours(node.row, node.col) 
+        for neighbour in neighbours:
+            if neighbour.is_vaccinated:
+                num_vaxxed += 1
+        return num_vaxxed / len(neighbours)
 
     def step(self, current_time_step):
         nodes_to_infect = []
@@ -164,16 +167,17 @@ class Simulation:
         wave = []
         for r in self.grid.grid:
             for n in r:
+                # apply vaccination
+                chance_of_infection = Simulation.CHANCE_OF_INFECTION * n.susceptiblity
+                if self.vaccination_enabled and self.time_steps > 20:
+                    if n.adoption_threshold <= self.get_vaccinated_neighbours(n):
+                        nodes_to_vaccinate.append(n)
+                    if n.is_vaccinated:
+                        chance_of_infection *= 0.1
+
                 if n.state == State.INFECTED and n.duration >= Simulation.RECOVERY_TIME: # recover after 14 time steps
                     nodes_to_recover.append(n)
                 elif n.state == State.SUSCEPTIBLE:
-                    chance_of_infection = Simulation.CHANCE_OF_INFECTION * n.susceptiblity
-                    if self.vaccination_enabled:
-                        if n.state == State.SUSCEPTIBLE and n.adoption_threshold < (self.get_num_recovered_nodes() * (1 - self.alpha) + self.get_num_vaccinated_nodes() * self.alpha) / self.num_nodes:
-                            nodes_to_vaccinate.append(n)
-                            continue
-                        if n.state == State.VACCINATED:
-                            chance_of_infection *= 0.1
                     neighbours = self.grid.get_neighbours(n.row, n.col)
                     for neighbour in neighbours:
                         if neighbour.state == State.INFECTED and random.random() < chance_of_infection:
@@ -198,10 +202,10 @@ class Simulation:
                     self.G.edges[u.name, v.name]['color'] = 'red'
                 elif u.state == State.RECOVERED:
                     self.G.edges[u.name, v.name]['color'] = 'black'
-                elif u.state == State.VACCINATED:
+                elif u.is_vaccinated:
                     self.G.edges[u.name, v.name]['color'] = 'yellow'
                 else:
-                    self.G.edges[u.name, v.name]['color'] = 'green'
+                    self.G.edges[u.name, v.name]['color'] = 'blue'
 
         node_color_map = [c[1]['color'] for c in self.G.nodes.data()]
         edge_color_map = [self.G[u][v]['color'] for u,v in self.G.edges]
@@ -228,16 +232,20 @@ class Simulation:
         susceptible_nodes = self.get_num_susceptible_nodes()
         infected_nodes = self.get_num_infected_nodes()
         recovered_nodes = self.get_num_recovered_nodes()
+        vaccinated_nodes = self.get_num_vaccinated_nodes()
         self.SIR_over_time.append((num, (susceptible_nodes, infected_nodes, recovered_nodes)))
 
+        vax_name = f', Vaccinated = {vaccinated_nodes}' if self.vaccination_enabled else ''
+        vax_sufix = '_vax' if self.vaccination_enabled else ''
+
         self.ax.clear()
-        self.ax.set_title(f't = {str(num)} | R0 = {R0_formated} | S = {susceptible_nodes}, I = {infected_nodes}, R = {recovered_nodes}', fontweight="bold")
+        self.ax.set_title(f't = {str(num)} | R0 = {R0_formated} | S = {susceptible_nodes}, I = {infected_nodes}, R = {recovered_nodes}{vax_name}', fontweight="bold")
         self.ax.set_xticks([])
         self.ax.set_yticks([])
         nx.draw(G=self.G, pos=self.pos, ax=self.ax, node_size=Simulation.NODE_SIZE, node_color=node_color_map, edge_color=edge_color_map)
         
         if num % 10 == 0:
-            plt.savefig(f'{Simulation.PROPAGATION_SAVE_FOLDER}/ca_propagation{str(num)}.png', bbox_inches='tight')
+            plt.savefig(f'{Simulation.PROPAGATION_SAVE_FOLDER}/ca_propagation{str(num)}{vax_sufix}.png', bbox_inches='tight')
 
     def frames_gen(self):
         while self.get_num_infected_nodes() > 0:
@@ -246,7 +254,8 @@ class Simulation:
     def start(self):
         self.display_graph(0)
         self.ani = animation.FuncAnimation(self.fig, self.step, frames=self.frames, interval=self.interval, repeat=False)
-        # self.ani.save(f'{Simulation.PROPAGATION_SAVE_FOLDER}/ca_propagation.gif', writer='imagemagick', fps=10)
+        vax_sufix = '_vax' if self.vaccination_enabled else ''
+        # self.ani.save(f'{Simulation.PROPAGATION_SAVE_FOLDER}/ca_propagation{vax_sufix}.gif', writer='imagemagick', fps=10)
         plt.show()
 
     def save_to_csv(self, list_of_tuples, filename):
@@ -284,29 +293,16 @@ class Simulation:
         list_of_time_steps = [t[0] for t in self.SIR_over_time]
 
         # plot SIR over time
-        plt.plot(list_of_time_steps, list_of_num_susceptible_nodes, label='S', color='green')
+        plt.plot(list_of_time_steps, list_of_num_susceptible_nodes, label='S', color='blue')
         plt.plot(list_of_time_steps, list_of_num_infected_nodes, label='I', color='red')
         plt.plot(list_of_time_steps, list_of_num_removed_nodes, label='R', color='black')
         plt.title('SIR Over Time')
         plt.xlabel('Time steps')
         plt.ylabel('Number of Nodes')
         plt.yscale('log')
-        plt.legend(['Susceptible (S)', 'Infected (I)', 'Recovered (R)'], loc='center right')
+        plt.legend(['Susceptible (S)', 'Infectious (I)', 'Recovered (R)'], loc='center right')
         plt.savefig(f'ca_analysis/SIR_over_time.png', bbox_inches='tight')
         plt.clf()
-        
-        # TODO: x-axis is diameter of the graph, y-axis is number of nodes whose out-degree is greater or equal to some threshold
-        # threshold_list = np.unique(out_degree_list)
-        # D = nx.DiGraph(self.edges)
-        # plt.plot(G)
-        # plt.show()
-        # for threshold in threshold_list:
-        #     nodes_to_remove = [n for n in D.nodes if D.out_degree(n) < threshold]
-        #     D.remove_nodes_from(nodes_to_remove)
-        #     print(f'{threshold} nodesss : {len(D.nodes)}')
-            # find diameter of the graph
-            # diameter = nx.diameter(D)
-            # print(f'Diameter of the graph with threshold {threshold} is {diameter}')
 
 
 if __name__ == '__main__':
@@ -322,8 +318,7 @@ if __name__ == '__main__':
     sim.set_frames(frames)
     sim.set_interval(interval)
     sim.enable_vaccination()
-    sim.set_alpha(1)
     sim.start()
 
     # run analysis
-    # sim.analyze()
+    sim.analyze()
