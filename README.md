@@ -6,7 +6,7 @@ Project for EECS4414 Information Networks
 
 ### Create virtual environment
 
-python3 -m venv .env
+<Path to Python 3.8.0> -m venv .env
 
 ### Install packages
 
