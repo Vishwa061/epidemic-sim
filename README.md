@@ -14,7 +14,7 @@ Project for EECS4414 Information Networks
 
 ### Install packages
 
-pip install -r req.txt
+.env/Scripts/pip install -r req.txt
 
 ## Run
 
